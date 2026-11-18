@@ -5,3 +5,13 @@ textarea{font:inherit;color:var(--ink);width:100%;padding:10px;border:1px solid 
 nav{display:flex;flex-wrap:wrap}nav a{flex:1 1 10%;min-width:120px}.checkline{display:flex;gap:8px;align-items:center}.checkline input{width:auto}textarea{width:100%;min-height:70px;padding:10px;background:#fffdf4;border:1px solid #cbbd94;font:inherit}.resource-layout article.sheet{margin-bottom:12px}@media(max-width:600px){nav a{min-width:30%;font-size:12px}}
 
 .resource-layout .lot-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.resource-layout .lot-grid .sheet{padding:16px}.resource-layout .lot-grid h3{font-size:18px}@media(max-width:800px){.resource-layout .lot-grid{grid-template-columns:1fr}}
+
+/* season scope: header picker and read-only notices */
+.season-pick{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);margin:0}
+.season-pick select{width:auto;min-width:170px;padding:6px 8px;font-size:11px;margin:0}
+.badge.stale{color:var(--red);border-color:oklch(65% .10 35)}
+.readonly{border-left:3px solid var(--red);background:oklch(93% .04 60);padding:11px 15px;font-size:12px;line-height:1.8;margin:0 0 18px}
+@media(max-width:767px){.identity .season-pick{font-size:11px}.season-pick select{min-width:130px}}
+.hive-cell.awaiting_inspection{background:oklch(90% .02 85);border-style:dashed}
+.hive-cell.awaiting_inspection i{background:oklch(70% .03 85)}
+.legend .fresh{background:oklch(70% .03 85)}

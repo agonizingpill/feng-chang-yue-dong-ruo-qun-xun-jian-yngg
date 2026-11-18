@@ -3,16 +3,18 @@ from fastapi import HTTPException
 from .models import Hive
 from .season_models import InsulationLot,InsulationInstall
 from .yard_service import require,audit
+from .season_service import active_season_shared,ensure_writable
 
 def install(db,b,u):
+    season=active_season_shared(db)
     h=require(db,Hive,b.hive_id,True)
-    if db.scalar(select(InsulationInstall.id).where(InsulationInstall.hive_id==h.id,InsulationInstall.state.in_(['installed','accepted']))):raise HTTPException(409,'该箱已有活跃保温安装')
+    if db.scalar(select(InsulationInstall.id).where(InsulationInstall.hive_id==h.id,InsulationInstall.season_id==season.id,InsulationInstall.state.in_(['installed','accepted']))):raise HTTPException(409,'该箱已有活跃保温安装')
     lot=require(db,InsulationLot,b.lot_id,True)
     if lot.state!='active' or lot.available_units<b.units:raise HTTPException(409,'保温物料隔离或库存不足')
-    lot.available_units-=b.units;row=InsulationInstall(**b.model_dump(),installed_by=u.email);db.add(row);audit(db,u,f'安装保温 {h.code} 扣{b.units}件');db.commit();return row
+    lot.available_units-=b.units;row=InsulationInstall(**b.model_dump(),season_id=season.id,installed_by=u.email);db.add(row);audit(db,u,f'安装保温 {h.code} 扣{b.units}件');db.commit();return row
 
 def change(db,key,b,u,action):
-    ref=require(db,InsulationInstall,key);h=require(db,Hive,ref.hive_id,True);row=require(db,InsulationInstall,key,True)
+    ref=require(db,InsulationInstall,key);ensure_writable(db,ref.season_id,'该保温安装');h=require(db,Hive,ref.hive_id,True);row=require(db,InsulationInstall,key,True)
     if action=='ventilation':
         if row.state!='installed':raise HTTPException(409,'验收后通风记录冻结')
         row.ventilation_checked=b.ventilation_checked

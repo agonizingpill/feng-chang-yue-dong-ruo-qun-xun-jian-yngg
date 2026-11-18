@@ -1,7 +1,21 @@
 from datetime import datetime
-from sqlalchemy import String,Float,Boolean,ForeignKey,JSON,CheckConstraint,DateTime,func
+from sqlalchemy import String,Float,Boolean,ForeignKey,JSON,CheckConstraint,DateTime,Index,func,text
 from sqlalchemy.orm import Mapped,mapped_column
 from .database import Base
+class Season(Base):
+    __tablename__='seasons'
+    __table_args__=(Index('uq_seasons_one_active','state',unique=True,postgresql_where=text("state='active'"),sqlite_where=text("state='active'")),)
+    id:Mapped[int]=mapped_column(primary_key=True)
+    code:Mapped[str]=mapped_column(String(40),unique=True)
+    label:Mapped[str]=mapped_column(String(80))
+    state:Mapped[str]=mapped_column(String(24),default='active')
+    previous_season_id:Mapped[int|None]=mapped_column(ForeignKey('seasons.id'),nullable=True)
+    open_request_id:Mapped[str|None]=mapped_column(String(80),unique=True,nullable=True)
+    summary:Mapped[dict|None]=mapped_column(JSON,nullable=True)
+    opened_by:Mapped[str]=mapped_column(String(120),default='',server_default='')
+    opened_at:Mapped[datetime]=mapped_column(DateTime,server_default=func.now())
+    closed_by:Mapped[str]=mapped_column(String(120),default='',server_default='')
+    closed_at:Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
 class User(Base):
     __tablename__='users'
     id:Mapped[int]=mapped_column(primary_key=True)
@@ -23,6 +37,7 @@ class Visit(Base):
     id:Mapped[int]=mapped_column(primary_key=True)
     code:Mapped[str]=mapped_column(String(50),unique=True)
     hive_id:Mapped[int]=mapped_column(ForeignKey('hives.id'))
+    season_id:Mapped[int]=mapped_column(ForeignKey('seasons.id'),index=True)
     weight_kg:Mapped[float]=mapped_column(Float)
     temperature:Mapped[float]=mapped_column(Float)
     activity:Mapped[float]=mapped_column(Float)
@@ -40,6 +55,7 @@ class CareAction(Base):
     __table_args__=(CheckConstraint('feed_kg>=0 AND feed_kg<=3'),)
     id:Mapped[int]=mapped_column(primary_key=True)
     visit_id:Mapped[int]=mapped_column(ForeignKey('visits.id'))
+    season_id:Mapped[int]=mapped_column(ForeignKey('seasons.id'),index=True)
     kind:Mapped[str]=mapped_column(String(20))
     feed_kg:Mapped[float]=mapped_column(Float,default=0)
     status:Mapped[str]=mapped_column(String(30),default='planned')

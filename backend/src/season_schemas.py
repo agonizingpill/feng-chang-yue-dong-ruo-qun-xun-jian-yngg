@@ -31,3 +31,6 @@ class SpringInput(Input):
 class PassInput(Input):
     rescue_care_id:int|None=None
     resolution:str=Field(min_length=5,max_length=400)
+class OpenSeason(Input):
+    request_id:str=Field(min_length=8,max_length=80,pattern=r'^[A-Za-z0-9._:-]+$')
+    label:str=Field(min_length=3,max_length=80)

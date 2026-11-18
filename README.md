@@ -99,4 +99,24 @@ Seed增加FD-202611-A可用30kg、FD-HOLD隔离8kg、FD-EXPIRED已过期5kg，�
 
 GET /moves /insulation-lots /insulation-installs /spring-reviews供三角色；POST /moves、complete/cancel、POST /insulation-lots、POST /insulation-installs、PUT ventilation、POST remove及POST /spring-reviews允许蜂师/主管；move approve、insulation accept、spring pass及物料隔离仅主管，viewer全部只读。各新增模型均有外键；物料数量与春检值域由数据库和Pydantic校验。
 
-Seed只在缺失时增加IN-2026-WINTER 120件，不改人工库存/安装/春检；历史winter_ready无需补装以维持历史状态，新的春检动作才要求保温。真实证据在test-artifacts/gb-1027/v3/。本地检疫留痕不替代行政检疫证；每箱每季一条春检，本演示固定2026越冬季，无跨季归档。
+Seed只在缺失时增加IN-2026-WINTER 120件，不改人工库存/安装/春检；历史winter_ready无需补装以维持历史状态，新的春检动作才要求保温。真实证据在test-artifacts/gb-1027/v3/。本地检疫留痕不替代行政检疫证；每箱每季一条春检。跨季归档见下节。
+
+
+## V4 结季与开新季
+
+第十页“结季与越冬季”供主管封存旧季、开启新季。核心约束：每箱每季只有一条春检，旧季封存后不再受理写入，新季从“待巡检”开始。
+
+1. **准入与阻断**：主管在页面或`GET /seasons/rollover/preview`先看阻断项。旧季仍有planned/executed/rechecked/needs_requeen处置、requested/approved转场、`screening`筛查中巡检，任一存在即拒绝结季并逐条列出；被拒时不改动旧季任何数据。
+2. **结季动作**：`POST /seasons/rollover`（仅主管，body含`request_id`与`label`）在一个事务内封存旧季（state=closed、记录封存人/时间/计数摘要），新建下一季（state=active、previous_season_id指向旧季），并把全部蜂箱care_state置为`awaiting_inspection`。蜂箱档案与饲料批次、保温物料库存原样沿用；旧季分值、春检资格、处置状态、同箱唯一春检、保温安装均不继承。筛查算法与阈值完全不变。
+3. **并发与重试**：`seasons`表有“仅一个active”的部分唯一索引；结季对active行加行锁。两名主管同时开季只有一个成功，另一个收到409并提示刷新。`request_id`记入新季`open_request_id`（唯一）：回执丢失后同号重试返回首次开出的那一季，不会重复开季；并发同号重试同样只开一季。
+4. **旧季只读**：新增`season_id`的Visit/CareAction/ApiaryMove/InsulationInstall/SpringReview，所有写入口（建巡检、筛查、建/执行/取消处置、领退料、复查、关闭、换王观察与确认、转场、保温、春检审签）先取当前active季并校验归属，旧季记录一律409只读。页面切到已封存季时显示只读提示并禁用写按钮。
+5. **迟回筛查**：worker写入分值前核对巡检所属季是否为当前active季；旧季迟到的筛查结果仍回写原Visit分值与状态，但不会修改新季蜂箱箱况。
+6. **中断恢复**：worker启动先`recover()`，排空Redis中未消费的筛查任务；无任务支撑却停在`screening`的巡检退回`blocked`可重试，不会永久卡住结季。结季本身单事务提交，失败整体回滚。
+7. **页面**：页头“越冬季”下拉可切换查看任一季的巡检、处置、转场、保温、春检；箱位、巡箱、筛查、处置按所选季加载。同箱在新季可重新巡检、筛查、建处置并春检，旧季同箱春检不再占位。
+8. **迁移**：启动时`migrate()`幂等执行。旧库补`seasons`表与五张业务表的`season_id`列，全部历史行归入首季`2026-winter`，历史依据与领退/观察关系保持原样；`spring_reviews`唯一键由hive_id改为(season_id,hive_id)。全程单事务，中断后重启重试。
+
+接口：`GET /seasons`（含各季计数）、`GET /seasons/current`、`GET /seasons/rollover/preview`、`POST /seasons/rollover`；`GET /visits|/care|/moves|/insulation-installs|/spring-reviews`支持`?season_id=`。后端新增`season_service.py`、`migration.py`；前端新增`pages/seasons.js`与`notebook.js`的季切换。
+
+回归测试：`cd backend && PYTHONPATH=. python -m pytest tests -q`（SQLite，默认跳过需真实并发行锁的用例）；设置`TEST_DATABASE_URL`指向临时PostgreSQL后再跑，会额外执行旧库升级测试与两项并发开季测试。详见`backend/tests/README.md`。
+
+范围：已实现单库、单次一串季的封存与开启；未实现按季分区归档、跨库搬迁、季内中途回滚或旧季数据删除。

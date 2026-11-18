@@ -15,10 +15,12 @@ from . import care_service
 from .screen_model import reference_model
 from .resource_routes import router as resources
 from .season_routes import router as seasons
+from .migration import migrate
 queue=redis.Redis.from_url(os.getenv('REDIS_URL','redis://redis:6379/0'),decode_responses=True)
 @asynccontextmanager
 async def lifespan(app):
     Base.metadata.create_all(engine)
+    migrate()
     if os.getenv('SEED_DEMO','true').lower()=='true':
         try:
             from scripts.seed_demo import seed
@@ -51,7 +53,10 @@ def add_hive(body:HiveInput,user=Depends(admin),db=Depends(session)):return save
 @app.put('/hives/{key}')
 def edit_hive(key:int,body:HiveInput,user=Depends(admin),db=Depends(session)):return save_hive(db,body,user,key)
 @app.get('/visits')
-def visits(user=Depends(current),db=Depends(session)):return db.scalars(select(Visit).order_by(Visit.id.desc())).all()
+def visits(season_id:int|None=None,user=Depends(current),db=Depends(session)):
+    q=select(Visit).order_by(Visit.id.desc())
+    if season_id is not None:q=q.where(Visit.season_id==season_id)
+    return db.scalars(q).all()
 @app.get('/visits/{key}')
 def visit(key:int,user=Depends(current),db=Depends(session)):return require(db,Visit,key)
 @app.post('/visits')
@@ -68,7 +73,10 @@ def screening_result(jobid:str,user=Depends(current)):
 @app.get('/winter-reference')
 def reference(user=Depends(current)):return reference_model()[1]
 @app.get('/care')
-def care(user=Depends(current),db=Depends(session)):return db.scalars(select(CareAction).order_by(CareAction.id.desc())).all()
+def care(season_id:int|None=None,user=Depends(current),db=Depends(session)):
+    q=select(CareAction).order_by(CareAction.id.desc())
+    if season_id is not None:q=q.where(CareAction.season_id==season_id)
+    return db.scalars(q).all()
 @app.post('/care')
 def plan(body:CareInput,user=Depends(editor),db=Depends(session)):return care_service.plan(db,body,user)
 @app.post('/care/{key}/execute')

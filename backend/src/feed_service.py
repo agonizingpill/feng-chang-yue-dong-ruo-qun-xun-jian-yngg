@@ -17,6 +17,10 @@ def state(db,key,body,user):
     lot.state=body.state;audit(db,user,f'饲料批次 {lot.code} 状态{body.state}');db.commit();return lot
 
 def issue(db,body,user):
+    from .season_service import ensure_writable
+    # Season lock first, then the care row: same order as rollover, no deadlock.
+    care=require(db,CareAction,body.care_id)
+    ensure_writable(db,care.season_id,'该饲喂计划')
     care=require(db,CareAction,body.care_id,True)
     if care.kind!='feed' or care.status!='planned':raise HTTPException(409,'仅计划中的饲喂处置可以领料')
     if db.scalar(select(FeedIssue).where(FeedIssue.care_id==care.id)):raise HTTPException(409,'该饲喂已领料，禁止重复扣料')
@@ -36,6 +40,9 @@ def execution_guard(db,care):
     item.state='used'
 
 def cancel(db,key,body,user):
+    from .season_service import ensure_writable
+    care=require(db,CareAction,key)
+    ensure_writable(db,care.season_id,'该处置')
     care=require(db,CareAction,key,True)
     if care.status!='planned':raise HTTPException(409,'仅未执行计划可以取消退料')
     item=db.scalar(select(FeedIssue).where(FeedIssue.care_id==key).with_for_update())

@@ -3,23 +3,25 @@ from fastapi import HTTPException
 from .models import Hive,Visit,CareAction
 from .season_models import InsulationInstall,SpringReview
 from .yard_service import require,audit,latest
+from .season_service import active_season_shared,ensure_writable
 
 def record(db,b,u):
+    season=active_season_shared(db)
     h=require(db,Hive,b.hive_id,True)
     if h.care_state!='winter_ready':raise HTTPException(409,'须已越冬合格的蜂群才能春检')
-    if db.scalar(select(SpringReview.id).where(SpringReview.hive_id==h.id)):raise HTTPException(409,'该箱已有本季春检')
-    install=db.scalar(select(InsulationInstall).where(InsulationInstall.hive_id==h.id,InsulationInstall.state=='accepted'))
+    if db.scalar(select(SpringReview.id).where(SpringReview.hive_id==h.id,SpringReview.season_id==season.id)):raise HTTPException(409,'该箱已有本季春检')
+    install=db.scalar(select(InsulationInstall).where(InsulationInstall.hive_id==h.id,InsulationInstall.season_id==season.id,InsulationInstall.state=='accepted'))
     if not install:raise HTTPException(409,'须有主管验收的保温安装')
-    v=db.get(Visit,latest(db,h.id));care=db.scalar(select(CareAction).join(Visit,CareAction.visit_id==Visit.id).where(Visit.hive_id==h.id,CareAction.status=='closed').order_by(CareAction.id.desc()))
+    v=db.get(Visit,latest(db,h.id,season.id) or 0);care=db.scalar(select(CareAction).join(Visit,CareAction.visit_id==Visit.id).where(Visit.hive_id==h.id,Visit.season_id==season.id,CareAction.status=='closed').order_by(CareAction.id.desc()))
     baseline_weight=care.followup_weight if care else v.weight_kg if v else None
     rescue=not b.queen_seen or b.frames<5 or b.mortality_pct>20
-    row=SpringReview(**b.model_dump(),install_id=install.id,state='rescue' if rescue else 'pending',rescue_after_care_id=db.scalar(select(func.coalesce(func.max(CareAction.id),0))),winter_snapshot={'site':h.site,'hive_code':h.code,'care_state':h.care_state,'queen_present':h.queen_present,'frames':h.colony_frames,'weight_kg':baseline_weight,'closed_care_id':care.id if care else None,'latest_visit_id':v.id if v else None,'insulation_id':install.id,'opening_weight_delta':round(b.opening_weight-baseline_weight,3) if baseline_weight else None})
+    row=SpringReview(**b.model_dump(),season_id=season.id,install_id=install.id,state='rescue' if rescue else 'pending',rescue_after_care_id=db.scalar(select(func.coalesce(func.max(CareAction.id),0))),winter_snapshot={'site':h.site,'hive_code':h.code,'care_state':h.care_state,'queen_present':h.queen_present,'frames':h.colony_frames,'weight_kg':baseline_weight,'closed_care_id':care.id if care else None,'latest_visit_id':v.id if v else None,'insulation_id':install.id,'opening_weight_delta':round(b.opening_weight-baseline_weight,3) if baseline_weight else None})
     h.queen_present=b.queen_seen;h.colony_frames=b.frames
     if rescue:h.care_state='spring_rescue'
     db.add(row);audit(db,u,f'春检 {h.code} 死亡率{b.mortality_pct}% {row.state}');db.commit();return row
 
 def pass_review(db,key,b,u):
-    ref=require(db,SpringReview,key);h=require(db,Hive,ref.hive_id,True);row=require(db,SpringReview,key,True)
+    ref=require(db,SpringReview,key);ensure_writable(db,ref.season_id,'该春检记录');h=require(db,Hive,ref.hive_id,True);row=require(db,SpringReview,key,True)
     if row.state not in ['pending','rescue']:raise HTTPException(409,'春检已通过，不能重复审签')
     if len(b.resolution.strip())<5:raise HTTPException(409,'须填写复苏审查依据')
     if row.state=='rescue':

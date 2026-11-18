@@ -1,11 +1,12 @@
 from datetime import date,datetime
-from sqlalchemy import String,Float,ForeignKey,JSON,CheckConstraint,Date,DateTime,func
+from sqlalchemy import String,Float,ForeignKey,JSON,CheckConstraint,Date,DateTime,Index,UniqueConstraint,func
 from sqlalchemy.orm import Mapped,mapped_column
 from .database import Base
 class ApiaryMove(Base):
     __tablename__='apiary_moves'
     id:Mapped[int]=mapped_column(primary_key=True)
     hive_id:Mapped[int]=mapped_column(ForeignKey('hives.id'))
+    season_id:Mapped[int]=mapped_column(ForeignKey('seasons.id'),index=True)
     destination:Mapped[str]=mapped_column(String(50))
     move_date:Mapped[date]=mapped_column(Date)
     health_note:Mapped[str]=mapped_column(String(400))
@@ -25,6 +26,7 @@ class InsulationInstall(Base):
     __table_args__=(CheckConstraint('units>0 AND returned_units>=0 AND returned_units<=units'),)
     id:Mapped[int]=mapped_column(primary_key=True)
     hive_id:Mapped[int]=mapped_column(ForeignKey('hives.id'))
+    season_id:Mapped[int]=mapped_column(ForeignKey('seasons.id'),index=True)
     lot_id:Mapped[int]=mapped_column(ForeignKey('insulation_lots.id'))
     units:Mapped[int]=mapped_column()
     ventilation_checked:Mapped[bool]=mapped_column()
@@ -35,9 +37,10 @@ class InsulationInstall(Base):
     removed_by:Mapped[str]=mapped_column(String(120),default='')
 class SpringReview(Base):
     __tablename__='spring_reviews'
-    __table_args__=(CheckConstraint('opening_weight>0 AND frames>=0 AND frames<=20 AND mortality_pct>=0 AND mortality_pct<=100'),)
+    __table_args__=(CheckConstraint('opening_weight>0 AND frames>=0 AND frames<=20 AND mortality_pct>=0 AND mortality_pct<=100'),UniqueConstraint('season_id','hive_id',name='uq_spring_review_season_hive'))
     id:Mapped[int]=mapped_column(primary_key=True)
-    hive_id:Mapped[int]=mapped_column(ForeignKey('hives.id'),unique=True)
+    hive_id:Mapped[int]=mapped_column(ForeignKey('hives.id'),index=True)
+    season_id:Mapped[int]=mapped_column(ForeignKey('seasons.id'),index=True)
     install_id:Mapped[int]=mapped_column(ForeignKey('insulation_installs.id'))
     opening_weight:Mapped[float]=mapped_column(Float)
     frames:Mapped[int]=mapped_column()
