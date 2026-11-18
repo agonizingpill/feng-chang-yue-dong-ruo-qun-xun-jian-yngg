@@ -1,0 +1,78 @@
+name: apiary-watch
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-apiary-watch}-db
+    environment:
+      POSTGRES_USER: apiary
+      POSTGRES_PASSWORD: apiary
+      POSTGRES_DB: apiary
+    ports: ["${DB_PORT:-17726}:5432"]
+    volumes: ["db_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apiary -d apiary"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-apiary-watch}-redis
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  backend:
+    build: ./backend
+    container_name: ${COMPOSE_PROJECT_NAME:-apiary-watch}-backend
+    environment: &env
+      DATABASE_URL: postgresql+psycopg://apiary:apiary@db:5432/apiary
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-apiary-watch-demo}
+      SEED_DEMO: ${SEED_DEMO:-true}
+    ports: ["${BACKEND_PORT:-19226}:8000"]
+    volumes: ["artifacts:/artifacts"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 4s
+      timeout: 3s
+      retries: 30
+  worker:
+    build: ./backend
+    container_name: ${COMPOSE_PROJECT_NAME:-apiary-watch}-worker
+    command: ["python", "-m", "src.worker"]
+    environment: *env
+    volumes: ["artifacts:/artifacts"]
+    depends_on:
+      backend: {condition: service_healthy}
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,time;assert time.time()-os.stat('/tmp/apiary-heartbeat').st_mtime<20"]
+      interval: 4s
+      timeout: 3s
+      retries: 30
+  frontend:
+    build: ./frontend
+    container_name: ${COMPOSE_PROJECT_NAME:-apiary-watch}-frontend
+    ports: ["${FRONTEND_PORT:-18226}:80"]
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 4s
+      timeout: 3s
+      retries: 30
+volumes:
+  db_data:
+  redis_data:
+  artifacts:
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${NETWORK_SUBNET:-10.221.27.0/24}
